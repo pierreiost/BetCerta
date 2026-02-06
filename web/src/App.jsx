@@ -10,8 +10,8 @@ function App() {
     away_team: '',
     odd: '',
     profit: '',
-    stats_label: 'Performance',
-    stats_value: '',
+    bet_amount: '',
+    unit: '',
     extra_tip: '',
   })
   const [loading, setLoading] = useState(false)
@@ -33,6 +33,8 @@ function App() {
         ...form,
         odd: parseFloat(form.odd),
         profit: parseFloat(form.profit),
+        bet_amount: parseFloat(form.bet_amount) || 0,
+        unit: parseFloat(form.unit) || 0,
       }
 
       const res = await fetch(`${API_URL}/generate-video`, {
@@ -42,8 +44,15 @@ function App() {
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Failed to generate video')
+        let msg = `Erro ${res.status}`
+        try {
+          const err = await res.json()
+          msg = err.detail || msg
+        } catch {
+          const text = await res.text()
+          msg = text || msg
+        }
+        throw new Error(msg)
       }
 
       const data = await res.json()
@@ -52,7 +61,6 @@ function App() {
         : `${API_URL}${data.video_url}`
       setVideoUrl(fullVideoUrl)
 
-      // Save to Supabase (non-blocking)
       saveGeneration({
         videoUrl: data.video_url,
         metadata: payload,
@@ -64,6 +72,8 @@ function App() {
     }
   }
 
+  const inputClass = "w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+
   return (
     <div className="min-h-screen bg-[#0B0E11] text-[#E5E7EB]">
       {/* Header */}
@@ -71,9 +81,9 @@ function App() {
         <div className="mx-auto flex max-w-4xl items-center gap-3">
           <Monitor className="h-6 w-6 text-[#00FF00]" />
           <h1 className="text-xl font-bold tracking-tight">
-            <span className="text-[#00FF00] neon-glow">GREEN</span>SCREEN
+            <span className="text-[#00FF00] neon-glow">BET</span>CERTA
           </h1>
-          <span className="ml-auto text-xs text-[#9CA3AF] font-mono">BET GENERATOR v1.0</span>
+          <span className="ml-auto text-xs text-[#9CA3AF] font-mono">GERADOR DE VÍDEOS v1.0</span>
         </div>
       </header>
 
@@ -98,13 +108,9 @@ function App() {
                     Time Casa
                   </label>
                   <input
-                    type="text"
-                    name="home_team"
-                    value={form.home_team}
-                    onChange={handleChange}
-                    required
-                    placeholder="Flamengo"
-                    className="w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+                    type="text" name="home_team" value={form.home_team}
+                    onChange={handleChange} required placeholder="Flamengo"
+                    className={inputClass}
                   />
                 </div>
                 <div>
@@ -112,13 +118,9 @@ function App() {
                     Time Fora
                   </label>
                   <input
-                    type="text"
-                    name="away_team"
-                    value={form.away_team}
-                    onChange={handleChange}
-                    required
-                    placeholder="Palmeiras"
-                    className="w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+                    type="text" name="away_team" value={form.away_team}
+                    onChange={handleChange} required placeholder="Palmeiras"
+                    className={inputClass}
                   />
                 </div>
               </div>
@@ -129,15 +131,9 @@ function App() {
                     Odd
                   </label>
                   <input
-                    type="number"
-                    name="odd"
-                    value={form.odd}
-                    onChange={handleChange}
-                    required
-                    step="0.01"
-                    min="1.01"
-                    placeholder="2.10"
-                    className="w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+                    type="number" name="odd" value={form.odd}
+                    onChange={handleChange} required step="0.01" min="1.01"
+                    placeholder="2.10" className={inputClass}
                   />
                 </div>
                 <div>
@@ -145,15 +141,9 @@ function App() {
                     Lucro (R$)
                   </label>
                   <input
-                    type="number"
-                    name="profit"
-                    value={form.profit}
-                    onChange={handleChange}
-                    required
-                    step="0.01"
-                    min="0"
-                    placeholder="1500.00"
-                    className="w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+                    type="number" name="profit" value={form.profit}
+                    onChange={handleChange} required step="0.01" min="0"
+                    placeholder="1500.00" className={inputClass}
                   />
                 </div>
               </div>
@@ -161,28 +151,22 @@ function App() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-[#9CA3AF] uppercase tracking-wider">
-                    Label Stats
+                    Valor da Aposta (R$)
                   </label>
                   <input
-                    type="text"
-                    name="stats_label"
-                    value={form.stats_label}
-                    onChange={handleChange}
-                    placeholder="Performance"
-                    className="w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+                    type="number" name="bet_amount" value={form.bet_amount}
+                    onChange={handleChange} step="0.01" min="0"
+                    placeholder="100.00" className={inputClass}
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-[#9CA3AF] uppercase tracking-wider">
-                    Valor Stats
+                    Unidade Indicada (%)
                   </label>
                   <input
-                    type="text"
-                    name="stats_value"
-                    value={form.stats_value}
-                    onChange={handleChange}
-                    placeholder="16.5 desarmes/jogo"
-                    className="w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+                    type="number" name="unit" value={form.unit}
+                    onChange={handleChange} step="0.1" min="0" max="100"
+                    placeholder="2.0" className={inputClass}
                   />
                 </div>
               </div>
@@ -192,12 +176,10 @@ function App() {
                   Dica Extra
                 </label>
                 <input
-                  type="text"
-                  name="extra_tip"
-                  value={form.extra_tip}
+                  type="text" name="extra_tip" value={form.extra_tip}
                   onChange={handleChange}
                   placeholder="Flamengo tem média de 16.5 desarmes/jogo"
-                  className="w-full rounded-lg border border-[#1E2228] bg-[#1A1F28] px-4 py-2.5 text-sm text-[#E5E7EB] placeholder-[#4B5563] outline-none transition focus:border-[#00FF00] focus:ring-1 focus:ring-[#00FF00]/30"
+                  className={inputClass}
                 />
               </div>
 

@@ -1,5 +1,5 @@
 """
-GreenScreen Bet Generator - Video Engine
+BetCerta - Video Engine
 Generates 1080x1920 (9:16) vertical videos with betting data overlays.
 """
 
@@ -10,20 +10,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import (
-    ColorClip,
-    ImageClip,
-    TextClip,
-    CompositeVideoClip,
-    concatenate_videoclips,
-)
+from moviepy.editor import ColorClip
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 WIDTH, HEIGHT = 1080, 1920
-FPS = 30
-DURATION = 15  # seconds
+FPS = 24
+DURATION = 12  # seconds (shorter = less memory)
 
 # Colors
 BG_COLOR = (11, 14, 17)        # #0B0E11
@@ -32,135 +26,152 @@ GREEN_RGB = (0, 255, 0)
 TEXT_COLOR = (229, 231, 235)    # #E5E7EB
 DARK_GRAY = (30, 34, 40)
 
+# Pre-load fonts once
+_fonts = {}
 
-def _generate_chart(stats_label: str, stats_value: str) -> str:
-    """Generate an upward trend chart with Matplotlib and return path to PNG."""
-    fig, ax = plt.subplots(figsize=(8, 4), dpi=150)
+def _get_fonts():
+    if _fonts:
+        return _fonts
+    try:
+        _fonts["big"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 68)
+        _fonts["med"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 44)
+        _fonts["sm"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 34)
+        _fonts["mono"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 60)
+        _fonts["mono_sm"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 38)
+        _fonts["xs"] = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
+    except (IOError, OSError):
+        default = ImageFont.load_default()
+        _fonts["big"] = default
+        _fonts["med"] = default
+        _fonts["sm"] = default
+        _fonts["mono"] = default
+        _fonts["mono_sm"] = default
+        _fonts["xs"] = default
+    return _fonts
+
+
+def _generate_chart() -> np.ndarray:
+    """Generate an upward trend chart and return as RGBA numpy array."""
+    fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
     fig.patch.set_facecolor("#0B0E11")
     ax.set_facecolor("#0B0E11")
 
     np.random.seed(42)
-    x = np.linspace(0, 10, 50)
-    base = np.linspace(1, 8, 50)
-    noise = np.random.normal(0, 0.3, 50)
-    y = base + noise
-    y = np.clip(y, 0.5, None)
+    x = np.linspace(0, 10, 40)
+    base = np.linspace(1, 8, 40)
+    noise = np.random.normal(0, 0.3, 40)
+    y = np.clip(base + noise, 0.5, None)
 
     ax.plot(x, y, color=GREEN, linewidth=3, solid_capstyle="round")
     ax.fill_between(x, y, alpha=0.15, color=GREEN)
-
-    ax.set_xlabel(stats_label if stats_label else "Performance", color="#E5E7EB", fontsize=14)
-    ax.set_ylabel(stats_value if stats_value else "", color="#E5E7EB", fontsize=14)
-    ax.tick_params(colors="#E5E7EB", labelsize=10)
+    ax.tick_params(colors="#E5E7EB", labelsize=9)
     for spine in ax.spines.values():
         spine.set_color("#1E2228")
-
     ax.grid(True, alpha=0.1, color="#E5E7EB")
 
-    chart_path = os.path.join(OUTPUT_DIR, f"chart_{uuid.uuid4().hex[:8]}.png")
-    fig.savefig(chart_path, bbox_inches="tight", transparent=True)
+    fig.canvas.draw()
+    w, h = fig.canvas.get_width_height()
+    buf = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8).reshape(h, w, 4)
+    # ARGB → RGBA
+    rgba = np.empty_like(buf)
+    rgba[:, :, 0] = buf[:, :, 1]
+    rgba[:, :, 1] = buf[:, :, 2]
+    rgba[:, :, 2] = buf[:, :, 3]
+    rgba[:, :, 3] = buf[:, :, 0]
     plt.close(fig)
-    return chart_path
+    return rgba
 
 
 def _create_scanline_overlay() -> np.ndarray:
     """Create a scanline/CRT grain overlay frame."""
     overlay = np.zeros((HEIGHT, WIDTH, 4), dtype=np.uint8)
-    # Horizontal scanlines every 4 pixels
     for y in range(0, HEIGHT, 4):
-        overlay[y, :, 3] = 25  # subtle alpha
-    # Random grain noise
-    grain = np.random.randint(0, 15, (HEIGHT, WIDTH), dtype=np.uint8)
+        overlay[y, :, 3] = 25
+    grain = np.random.randint(0, 12, (HEIGHT, WIDTH), dtype=np.uint8)
     overlay[:, :, 0] = grain
     overlay[:, :, 1] = grain
     overlay[:, :, 2] = grain
-    overlay[:, :, 3] = np.clip(overlay[:, :, 3].astype(int) + grain.astype(int) // 2, 0, 40).astype(np.uint8)
+    overlay[:, :, 3] = np.clip(overlay[:, :, 3].astype(np.int16) + grain.astype(np.int16) // 2, 0, 35).astype(np.uint8)
     return overlay
 
 
-def _make_frame_with_counter(
+def _make_frame_fn(
     home_team: str,
     away_team: str,
     odd: float,
     profit: float,
+    bet_amount: float,
+    unit: float,
     chart_img: np.ndarray,
     scanline: np.ndarray,
     extra_tip: str = "",
 ):
-    """Return a function that generates frame at time t with animated counter."""
+    """Return a function that generates frame at time t."""
+    fonts = _get_fonts()
+    chart_pil = Image.fromarray(chart_img).convert("RGBA").resize((900, 400))
+    scanline_img = Image.fromarray(scanline)
 
     def make_frame(t):
-        # Create base image
         img = Image.new("RGBA", (WIDTH, HEIGHT), (*BG_COLOR, 255))
         draw = ImageDraw.Draw(img)
 
-        # Try to load fonts, fall back to default
-        try:
-            font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 72)
-            font_med = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48)
-            font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 36)
-            font_mono = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 64)
-        except (IOError, OSError):
-            font_big = ImageFont.load_default()
-            font_med = ImageFont.load_default()
-            font_sm = ImageFont.load_default()
-            font_mono = ImageFont.load_default()
+        # -- Header: "BETCERTA" branding --
+        draw.text((WIDTH // 2, 120), "BETCERTA", fill=GREEN_RGB, font=fonts["big"], anchor="mm")
+        draw.text((WIDTH // 2, 180), "GERADOR DE VÍDEOS", fill=TEXT_COLOR, font=fonts["sm"], anchor="mm")
 
-        # -- Header: "GREENSCREEN" branding --
-        draw.text((WIDTH // 2, 120), "GREENSCREEN", fill=GREEN_RGB, font=font_big, anchor="mm")
-        draw.text((WIDTH // 2, 180), "BET GENERATOR", fill=TEXT_COLOR, font=font_sm, anchor="mm")
-
-        # -- Divider line --
+        # -- Divider --
         draw.line([(80, 230), (WIDTH - 80, 230)], fill=GREEN_RGB, width=2)
 
-        # -- Match info --
+        # -- Match --
         match_text = f"{home_team}  vs  {away_team}"
-        draw.text((WIDTH // 2, 320), match_text, fill=TEXT_COLOR, font=font_med, anchor="mm")
+        draw.text((WIDTH // 2, 320), match_text, fill=TEXT_COLOR, font=fonts["med"], anchor="mm")
 
         # -- Odd badge --
-        odd_text = f"Odd: {odd:.2f}"
         draw.rounded_rectangle([(WIDTH // 2 - 180, 380), (WIDTH // 2 + 180, 450)],
                                 radius=12, fill=DARK_GRAY, outline=GREEN_RGB, width=2)
-        draw.text((WIDTH // 2, 415), odd_text, fill=GREEN_RGB, font=font_sm, anchor="mm")
+        draw.text((WIDTH // 2, 415), f"Odd: {odd:.2f}", fill=GREEN_RGB, font=fonts["sm"], anchor="mm")
+
+        # -- Bet amount + Unit (side by side) --
+        draw.rounded_rectangle([(100, 480), (520, 560)],
+                                radius=12, fill=DARK_GRAY, outline=(*TEXT_COLOR, 80), width=1)
+        draw.text((310, 500), "VALOR DA APOSTA", fill=(*TEXT_COLOR, 180), font=fonts["xs"], anchor="mt")
+        draw.text((310, 535), f"R$ {bet_amount:,.2f}", fill=GREEN_RGB, font=fonts["mono_sm"], anchor="mm")
+
+        draw.rounded_rectangle([(560, 480), (980, 560)],
+                                radius=12, fill=DARK_GRAY, outline=(*TEXT_COLOR, 80), width=1)
+        draw.text((770, 500), "UNIDADE INDICADA", fill=(*TEXT_COLOR, 180), font=fonts["xs"], anchor="mt")
+        draw.text((770, 535), f"{unit:.1f}%", fill=GREEN_RGB, font=fonts["mono_sm"], anchor="mm")
 
         # -- Animated profit counter --
-        # Ease-in-out animation over first 4 seconds
         anim_t = min(t / 4.0, 1.0)
-        eased = anim_t * anim_t * (3 - 2 * anim_t)  # smoothstep
+        eased = anim_t * anim_t * (3 - 2 * anim_t)
         current_profit = profit * eased
 
-        draw.text((WIDTH // 2, 540), "LUCRO ESTIMADO", fill=TEXT_COLOR, font=font_sm, anchor="mm")
-        profit_str = f"R$ {current_profit:,.2f}"
-        draw.text((WIDTH // 2, 630), profit_str, fill=GREEN_RGB, font=font_mono, anchor="mm")
+        draw.text((WIDTH // 2, 620), "LUCRO ESTIMADO", fill=TEXT_COLOR, font=fonts["sm"], anchor="mm")
+        draw.text((WIDTH // 2, 700), f"R$ {current_profit:,.2f}", fill=GREEN_RGB, font=fonts["mono"], anchor="mm")
 
-        # -- Green glow rectangle behind profit --
+        # -- Glow after animation --
         if t > 4.0:
             pulse = int(15 + 10 * np.sin(t * 3))
             draw.rounded_rectangle(
-                [(WIDTH // 2 - 300, 580), (WIDTH // 2 + 300, 670)],
-                radius=16,
-                outline=(*GREEN_RGB, pulse * 5),
-                width=3,
+                [(WIDTH // 2 - 300, 660), (WIDTH // 2 + 300, 740)],
+                radius=16, outline=(*GREEN_RGB, min(pulse * 5, 255)), width=3,
             )
 
-        # -- Chart overlay --
-        chart_pil = Image.fromarray(chart_img).convert("RGBA")
-        chart_pil = chart_pil.resize((900, 450))
-        # Fade in chart after 2 seconds
+        # -- Chart --
         if t >= 2.0:
             chart_alpha = min((t - 2.0) / 1.5, 1.0)
-            alpha_channel = chart_pil.split()[3]
-            alpha_channel = alpha_channel.point(lambda p: int(p * chart_alpha))
-            chart_pil.putalpha(alpha_channel)
-            img.paste(chart_pil, (90, 750), chart_pil)
+            c = chart_pil.copy()
+            alpha_ch = c.split()[3]
+            alpha_ch = alpha_ch.point(lambda p: int(p * chart_alpha))
+            c.putalpha(alpha_ch)
+            img.paste(c, (90, 800), c)
 
         # -- Extra tip --
         if extra_tip:
-            draw.text((WIDTH // 2, 1280), "DICA EXTRA", fill=GREEN_RGB, font=font_sm, anchor="mm")
-            # Word wrap the tip
+            draw.text((WIDTH // 2, 1280), "DICA EXTRA", fill=GREEN_RGB, font=fonts["sm"], anchor="mm")
             words = extra_tip.split()
-            lines = []
-            current = ""
+            lines, current = [], ""
             for w in words:
                 test = f"{current} {w}".strip()
                 if len(test) > 35:
@@ -171,18 +182,16 @@ def _make_frame_with_counter(
             if current:
                 lines.append(current)
             for i, line in enumerate(lines[:3]):
-                draw.text((WIDTH // 2, 1340 + i * 45), line, fill=TEXT_COLOR, font=font_sm, anchor="mm")
+                draw.text((WIDTH // 2, 1340 + i * 45), line, fill=TEXT_COLOR, font=fonts["sm"], anchor="mm")
 
         # -- Footer --
         draw.line([(80, HEIGHT - 200), (WIDTH - 80, HEIGHT - 200)], fill=GREEN_RGB, width=2)
-        draw.text((WIDTH // 2, HEIGHT - 140), "greenscreen.bet", fill=(*TEXT_COLOR, 180), font=font_sm, anchor="mm")
-        draw.text((WIDTH // 2, HEIGHT - 80), "Análise gerada por IA", fill=(*TEXT_COLOR, 100), font=font_sm, anchor="mm")
+        draw.text((WIDTH // 2, HEIGHT - 140), "betcerta.fly.dev", fill=(*TEXT_COLOR, 180), font=fonts["sm"], anchor="mm")
+        draw.text((WIDTH // 2, HEIGHT - 80), "Análise gerada por IA", fill=(*TEXT_COLOR, 100), font=fonts["sm"], anchor="mm")
 
-        # -- Apply scanline overlay --
-        scanline_img = Image.fromarray(scanline)
-        img = Image.alpha_composite(img, scanline_img)
-
-        return np.array(img.convert("RGB"))
+        # -- Scanline --
+        img_out = Image.alpha_composite(img, scanline_img)
+        return np.array(img_out.convert("RGB"))
 
     return make_frame
 
@@ -192,22 +201,18 @@ def generate_video(
     away_team: str,
     odd: float,
     profit: float,
-    stats_label: str = "Performance",
-    stats_value: str = "",
+    bet_amount: float = 0.0,
+    unit: float = 0.0,
     extra_tip: str = "",
 ) -> str:
-    """Generate a 15-second vertical video and return the file path."""
+    """Generate a vertical video and return the file path."""
 
-    # Generate chart
-    chart_path = _generate_chart(stats_label, stats_value)
-    chart_img = np.array(Image.open(chart_path).convert("RGBA"))
-
-    # Generate scanline overlay (static)
+    chart_img = _generate_chart()
     scanline = _create_scanline_overlay()
 
-    # Build video using make_frame
-    frame_fn = _make_frame_with_counter(
-        home_team, away_team, odd, profit, chart_img, scanline, extra_tip
+    frame_fn = _make_frame_fn(
+        home_team, away_team, odd, profit, bet_amount, unit,
+        chart_img, scanline, extra_tip
     )
 
     video = ColorClip(size=(WIDTH, HEIGHT), color=BG_COLOR, duration=DURATION)
@@ -215,7 +220,6 @@ def generate_video(
     video = video.set_fps(FPS)
     video = video.set_duration(DURATION)
 
-    # Output
     filename = f"bet_{uuid.uuid4().hex[:8]}.mp4"
     output_path = os.path.join(OUTPUT_DIR, filename)
 
@@ -225,11 +229,8 @@ def generate_video(
         codec="libx264",
         audio=False,
         preset="ultrafast",
+        threads=2,
         logger=None,
     )
-
-    # Cleanup chart
-    if os.path.exists(chart_path):
-        os.remove(chart_path)
 
     return output_path

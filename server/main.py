@@ -1,5 +1,5 @@
 """
-GreenScreen Bet Generator - FastAPI Backend
+BetCerta - FastAPI Backend
 """
 
 import os
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from video_engine import generate_video
 
-app = FastAPI(title="GreenScreen Bet Generator", version="1.0.0")
+app = FastAPI(title="BetCerta", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,8 +32,8 @@ class VideoRequest(BaseModel):
     away_team: str = Field(..., min_length=1, max_length=100, examples=["Palmeiras"])
     odd: float = Field(..., gt=1.0, examples=[2.10])
     profit: float = Field(..., ge=0, examples=[1500.00])
-    stats_label: str = Field(default="Performance", max_length=100)
-    stats_value: str = Field(default="", max_length=100)
+    bet_amount: float = Field(default=0.0, ge=0, examples=[100.00])
+    unit: float = Field(default=0.0, ge=0, le=100, examples=[2.0])
     extra_tip: str = Field(default="", max_length=300)
 
 
@@ -55,8 +55,8 @@ def create_video(req: VideoRequest):
             away_team=req.away_team,
             odd=req.odd,
             profit=req.profit,
-            stats_label=req.stats_label,
-            stats_value=req.stats_value,
+            bet_amount=req.bet_amount,
+            unit=req.unit,
             extra_tip=req.extra_tip,
         )
     except Exception as e:
@@ -88,4 +88,4 @@ def serve_spa(full_path: str):
     index = os.path.join(STATIC_DIR, "index.html")
     if os.path.isdir(STATIC_DIR) and os.path.exists(index):
         return HTMLResponse(open(index).read())
-    return HTMLResponse("<h1>GreenScreen API</h1><p>Frontend not built. Run the Dockerfile.</p>")
+    return HTMLResponse("<h1>BetCerta API</h1><p>Frontend not built. Run the Dockerfile.</p>")
