@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #0B0E11;
+  --color-bg-card: #141820;
+  --color-bg-input: #1A1F28;
+  --color-green-neon: #00FF00;
+  --color-green-dim: #00CC00;
+  --color-text-primary: #E5E7EB;
+  --color-text-muted: #9CA3AF;
+  --color-border: #1E2228;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+/* Scanline overlay effect on the page */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.08) 3px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  z-index: 9999;
+}
+
+/* Neon glow effect */
+.neon-glow {
+  text-shadow: 0 0 10px #00ff0066, 0 0 20px #00ff0033;
+}
+
+/* Pulse animation for loading */
+@keyframes neon-pulse {
+  0%, 100% { box-shadow: 0 0 5px #00ff0033; }
+  50% { box-shadow: 0 0 20px #00ff0066, 0 0 40px #00ff0022; }
+}
+
+.neon-pulse {
+  animation: neon-pulse 2s ease-in-out infinite;
+}
