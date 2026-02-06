@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+__pycache__/
+*.pyc
+server/output/*.mp4
+server/output/*.png
+.vite/

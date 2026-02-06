@@ -1,0 +1,10 @@
+node_modules/
+web/node_modules/
+web/dist/
+server/output/*.mp4
+server/output/*.png
+__pycache__/
+*.pyc
+.git/
+.env
+.env.local
