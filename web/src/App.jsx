@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Monitor, Download, Loader2, TrendingUp, Zap } from 'lucide-react'
 import { saveGeneration } from './lib/supabase'
 
+const API_URL = import.meta.env.VITE_API_URL || ''
+
 function App() {
   const [form, setForm] = useState({
     home_team: '',
@@ -33,7 +35,7 @@ function App() {
         profit: parseFloat(form.profit),
       }
 
-      const res = await fetch('/generate-video', {
+      const res = await fetch(`${API_URL}/generate-video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -45,7 +47,10 @@ function App() {
       }
 
       const data = await res.json()
-      setVideoUrl(data.video_url)
+      const fullVideoUrl = data.video_url.startsWith('http')
+        ? data.video_url
+        : `${API_URL}${data.video_url}`
+      setVideoUrl(fullVideoUrl)
 
       // Save to Supabase (non-blocking)
       saveGeneration({
