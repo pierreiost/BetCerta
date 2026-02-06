@@ -44,12 +44,12 @@ function App() {
       })
 
       if (!res.ok) {
+        const text = await res.text()
         let msg = `Erro ${res.status}`
         try {
-          const err = await res.json()
+          const err = JSON.parse(text)
           msg = err.detail || msg
         } catch {
-          const text = await res.text()
           msg = text || msg
         }
         throw new Error(msg)
