@@ -5,7 +5,8 @@ GreenScreen Bet Generator - FastAPI Backend
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from video_engine import generate_video
@@ -19,6 +20,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve React static build if available
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
 
 class VideoRequest(BaseModel):
@@ -74,3 +80,12 @@ def get_video(filename: str):
         raise HTTPException(status_code=404, detail="Video not found")
 
     return FileResponse(path, media_type="video/mp4", filename=filename)
+
+
+# Catch-all: serve React index.html for any non-API route (SPA routing)
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    index = os.path.join(STATIC_DIR, "index.html")
+    if os.path.isdir(STATIC_DIR) and os.path.exists(index):
+        return HTMLResponse(open(index).read())
+    return HTMLResponse("<h1>GreenScreen API</h1><p>Frontend not built. Run the Dockerfile.</p>")
