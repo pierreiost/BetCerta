@@ -42,8 +42,15 @@ function App() {
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Failed to generate video')
+        let msg = `Erro ${res.status}`
+        try {
+          const err = await res.json()
+          msg = err.detail || msg
+        } catch {
+          const text = await res.text()
+          msg = text || msg
+        }
+        throw new Error(msg)
       }
 
       const data = await res.json()

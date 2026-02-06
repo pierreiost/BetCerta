@@ -1,4 +1,4 @@
-app = "greenscreen-bet-generator"
+app = "betcerta"
 primary_region = "gru"
 
 [build]
